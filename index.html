@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Live Weather Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        background: linear-gradient(to right, #89f7fe, #66a6ff);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        height: 100vh;
+        margin: 0;
+        overflow-y: auto;
+      }
+
+      h1 {
+        color: #004aad;
+        font-size: 32px;
+        margin-top: 20px;
+        margin-bottom: 15px;
+        text-align: center;
+      }
+
+      .weather-box {
+        background: white;
+        padding: 30px;
+        border-radius: 20px;
+        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+        text-align: center;
+        width: 420px;
+        margin-bottom: 30px;
+      }
+
+      input {
+        padding: 10px;
+        width: 70%;
+        border: 2px solid #66a6ff;
+        border-radius: 5px;
+        font-size: 16px;
+      }
+
+      button {
+        padding: 10px 12px;
+        margin-top: 10px;
+        background: #66a6ff;
+        color: white;
+        border: none;
+        border-radius: 6px;
+        font-size: 15px;
+        cursor: pointer;
+        transition: background 0.3s;
+      }
+
+      button:hover {
+        background: #005bea;
+      }
+
+      .result {
+        margin-top: 20px;
+      }
+
+      .icon {
+        width: 80px;
+        height: 80px;
+      }
+
+      .error {
+        color: red;
+        font-weight: bold;
+      }
+
+      .fav-btn {
+        background: gold;
+        color: black;
+        margin-left: 10px;
+      }
+
+      .fav-list {
+        margin-top: 20px;
+        background: #f0f8ff;
+        border-radius: 10px;
+        padding: 10px;
+      }
+
+      .fav-item {
+        cursor: pointer;
+        color: #007bff;
+        font-weight: bold;
+      }
+
+      .fav-item:hover {
+        text-decoration: underline;
+      }
+
+      .loc-btn {
+        background: #28a745;
+      }
+
+      canvas {
+        margin-top: 20px;
+      }
+
+      /* Forecast cards */
+      .forecast-cards {
+        display: flex;
+        justify-content: space-around;
+        margin-top: 20px;
+      }
+
+      .forecast-card {
+        background: #e9f3ff;
+        border-radius: 10px;
+        padding: 10px;
+        width: 110px;
+        text-align: center;
+        box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+      }
+
+      .forecast-card img {
+        width: 50px;
+      }
+
+      .forecast-card p {
+        margin: 5px 0;
+        font-size: 14px;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>🌦️ Live Weather Dashboard</h1>
+
+    <div class="weather-box">
+      <input type="text" id="cityInput" placeholder="Enter city name" />
+      <button onclick="getWeather()">Get Weather</button>
+      <button class="loc-btn" onclick="getLocationWeather()">
+        📍 Use My Location
+      </button>
+
+      <div class="result" id="result"></div>
+
+      <canvas id="forecastChart" width="380" height="250"></canvas>
+
+      <!-- Forecast cards -->
+      <div class="forecast-cards" id="forecastCards"></div>
+
+      <button class="fav-btn" onclick="addFavorite()">
+        ⭐ Add to Favorites
+      </button>
+
+      <div class="fav-list" id="favList">
+        <h3>⭐ Favorite Cities</h3>
+        <div id="favCities"></div>
+      </div>
+    </div>
+
+    <script>
+      const apiKey = "d4afe42722c98e631dfa248801d35a63";
+      let chartInstance = null;
+
+      async function getWeather(city) {
+        const cityName =
+          city || document.getElementById("cityInput").value.trim();
+        const resultDiv = document.getElementById("result");
+
+        if (cityName === "") {
+          resultDiv.innerHTML =
+            "<p class='error'>⚠️ Please enter a city name.</p>";
+          return;
+        }
+
+        const apiUrl = `https://api.openweathermap.org/data/2.5/weather?q=${cityName}&appid=${apiKey}&units=metric`;
+
+        try {
+          const response = await fetch(apiUrl);
+          const data = await response.json();
+
+          if (data.cod === "404") {
+            resultDiv.innerHTML =
+              "<p class='error'>❌ City not found. Please try again!</p>";
+            return;
+          }
+
+          const weatherIcon = `https://openweathermap.org/img/wn/${data.weather[0].icon}@2x.png`;
+
+          resultDiv.innerHTML = `
+          <h3>${data.name}, ${data.sys.country}</h3>
+          <img src="${weatherIcon}" alt="Weather Icon" class="icon" />
+          <p><strong>Condition:</strong> ${data.weather[0].main}</p>
+          <p><strong>Temperature:</strong> ${data.main.temp} °C</p>
+          <p><strong>Humidity:</strong> ${data.main.humidity}%</p>
+          <p><strong>Wind Speed:</strong> ${data.wind.speed} m/s</p>
+        `;
+
+          getForecast(cityName);
+        } catch (error) {
+          resultDiv.innerHTML =
+            "<p class='error'>⚠️ Unable to fetch weather. Check your connection.</p>";
+        }
+      }
+
+      async function getForecast(city) {
+        const apiUrl = `https://api.openweathermap.org/data/2.5/forecast?q=${city}&appid=${apiKey}&units=metric`;
+        try {
+          const response = await fetch(apiUrl);
+          const data = await response.json();
+
+          const forecastData = {};
+
+          data.list.forEach((item) => {
+            const date = item.dt_txt.split(" ")[0];
+            if (!forecastData[date]) forecastData[date] = [];
+            forecastData[date].push({
+              temp: item.main.temp,
+              icon: item.weather[0].icon,
+              desc: item.weather[0].main,
+            });
+          });
+
+          const dates = Object.keys(forecastData).slice(0, 3);
+          const avgTemps = dates.map((date) => {
+            const temps = forecastData[date].map((t) => t.temp);
+            return (temps.reduce((a, b) => a + b, 0) / temps.length).toFixed(1);
+          });
+
+          drawChart(dates, avgTemps);
+          showForecastCards(dates, forecastData);
+        } catch (error) {
+          console.log("Forecast Error:", error);
+        }
+      }
+
+      function drawChart(dates, temps) {
+        const ctx = document.getElementById("forecastChart").getContext("2d");
+
+        if (chartInstance) chartInstance.destroy();
+
+        chartInstance = new Chart(ctx, {
+          type: "line",
+          data: {
+            labels: dates,
+            datasets: [
+              {
+                label: "3-Day Temperature (°C)",
+                data: temps,
+                borderColor: "#007bff",
+                backgroundColor: "rgba(0, 123, 255, 0.3)",
+                borderWidth: 2,
+                tension: 0.4,
+                fill: true,
+              },
+            ],
+          },
+          options: {
+            responsive: true,
+            plugins: { legend: { display: false } },
+            scales: { y: { beginAtZero: false } },
+          },
+        });
+      }
+
+      function showForecastCards(dates, forecastData) {
+        const container = document.getElementById("forecastCards");
+        container.innerHTML = dates
+          .map((date) => {
+            const dayData = forecastData[date][0];
+            return `
+              <div class="forecast-card">
+                <p><strong>${date}</strong></p>
+                <img src="https://openweathermap.org/img/wn/${dayData.icon}.png" alt="icon" />
+                <p>${dayData.desc}</p>
+                <p><strong>${(
+                  forecastData[date].reduce((a, b) => a + b.temp, 0) /
+                  forecastData[date].length
+                ).toFixed(1)}°C</strong></p>
+              </div>`;
+          })
+          .join("");
+      }
+
+      function addFavorite() {
+        const city = document.getElementById("cityInput").value.trim();
+        if (city === "") return alert("Enter a city name first!");
+
+        let favorites = JSON.parse(localStorage.getItem("favorites")) || [];
+        if (!favorites.includes(city)) {
+          favorites.push(city);
+          localStorage.setItem("favorites", JSON.stringify(favorites));
+          displayFavorites();
+        } else {
+          alert("City already added to favorites!");
+        }
+      }
+
+      function displayFavorites() {
+        const favCitiesDiv = document.getElementById("favCities");
+        const favorites = JSON.parse(localStorage.getItem("favorites")) || [];
+
+        if (favorites.length === 0) {
+          favCitiesDiv.innerHTML = "<p>No favorites yet.</p>";
+          return;
+        }
+
+        favCitiesDiv.innerHTML = favorites
+          .map(
+            (city) => `<p class='fav-item' onclick="getWeather('${city}')">📍 ${city}</p>`
+          )
+          .join("");
+      }
+
+      function getLocationWeather() {
+        if (navigator.geolocation) {
+          navigator.geolocation.getCurrentPosition(async (pos) => {
+            const { latitude, longitude } = pos.coords;
+            const apiUrl = `https://api.openweathermap.org/data/2.5/weather?lat=${latitude}&lon=${longitude}&appid=${apiKey}&units=metric`;
+
+            try {
+              const response = await fetch(apiUrl);
+              const data = await response.json();
+              const weatherIcon = `https://openweathermap.org/img/wn/${data.weather[0].icon}@2x.png`;
+
+              document.getElementById("result").innerHTML = `
+              <h3>${data.name}, ${data.sys.country}</h3>
+              <img src="${weatherIcon}" alt="Weather Icon" class="icon" />
+              <p><strong>Condition:</strong> ${data.weather[0].main}</p>
+              <p><strong>Temperature:</strong> ${data.main.temp} °C</p>
+              <p><strong>Humidity:</strong> ${data.main.humidity}%</p>
+              <p><strong>Wind Speed:</strong> ${data.wind.speed} m/s</p>
+            `;
+              getForecast(data.name);
+            } catch (err) {
+              document.getElementById("result").innerHTML =
+                "<p class='error'>⚠️ Location weather unavailable.</p>";
+            }
+          });
+        } else {
+          alert("Geolocation is not supported by your browser.");
+        }
+      }
+
+      window.onload = displayFavorites;
+    </script>
+  </body>
+</html>
